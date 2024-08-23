@@ -20,6 +20,7 @@ typedef struct {
 #include "external/stb_image_write.h"
 #define max(a,b) a>b?a:b
 #define min(a,b) a<b?a:b
+//#define write_images(path, ...) write_images_va(path, sizeof((void*[]){__VA_ARGS__})/sizeof(void *),((Tensor*[]){__VA_ARGS__}))
 static inline void write_image(const char* path, size_t width, size_t height, Tensor *img)
 {
     uint8_t *buffer = malloc(width*height*sizeof(int)); 
@@ -31,11 +32,41 @@ static inline void write_image(const char* path, size_t width, size_t height, Te
         maxv = max(maxv, img->data[i]); 
     }
     for(int y=0;y<height;y++)
+    {
         for(int x=0;x<width;x++)
-            buffer[y*width+x] = 255*(tel(img, 0, img->w*x/width, img->h*y/height)-minv)/maxv;
+        {
+            buffer[y*width+x] = tel(img, 0, (img->w*x)/width, (img->h*y)/height);
+        }
+        printf("%d\n", (img->h*y)/height);
+    }
+    for(int i=0;i<width*height;i++)
+        buffer[i] = (uint8_t)(255*(img->data[tsize(img)*i/(width*height)]-minv)/maxv);
     stbi_write_jpg(path, width, height, 1, buffer, 100);
     free(buffer);
 }
+
+//static inline void write_images_va(const char* path, int n, Tensor *imgs[]) 
+//{
+//    size_t width = 0;
+//    size_t height = 0;
+//
+//    for(int i=0;i<n;i++){
+//        height+=imgs[i]->h;
+//        width = max(width, imgs[i]->w);
+//    }
+//    uint8_t *buffer = malloc(width*height); 
+//    int cheight = 0;
+//    for(int i=0;i<n;i++){
+//        for(int j=0;j<imgs[i]->h;j++)
+//        {
+//            for(int k=0;k<imgs[i]->w;k++)
+//            {
+//                buffer[cheight*width+k] = (uint8_t)(255*(tel(imgs[i],1, k, j)-minv)/maxv); 
+//            }
+//            cheight++;
+//        }
+//    }
+//}
 
 int main(void) {
 
@@ -65,5 +96,7 @@ int main(void) {
     printf("Coumns %d\n", cols);
 
     write_image("data/res.jpg", 280, 280, im1);
+    ////int a = (&(Tensor){1,2,3})->c;
+    //printf("%d", a);
     return 0;
 }

@@ -1,4 +1,4 @@
 all: build
 	./run
 build:
-	gcc -ggdb -o run conv.c
+	gcc -fopenmp -ggdb -o run conv.c

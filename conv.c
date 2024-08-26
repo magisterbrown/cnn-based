@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <byteswap.h>
+#include <time.h>
 
 typedef struct {
     size_t c,w,h;
@@ -34,10 +35,13 @@ static inline void write_image(const char* path, size_t width, size_t height, Te
 }
 
 #include <assert.h>
+#include <omp.h>
 void forward_conv(Tensor *input, Tensor *conv, Tensor *output)
 {
     assert(conv->w == conv->h);
     int offs = conv->w/2;
+    
+    #pragma omp parallel for schedule(static)
     for(int x=offs;x<input->w-offs;x++)
         for(int y=offs;y<input->h-offs;y++)
         {
@@ -49,8 +53,10 @@ void forward_conv(Tensor *input, Tensor *conv, Tensor *output)
         }
 }
 
+#define NUM_THREADS 12
 int main(void) {
 
+    omp_set_num_threads(NUM_THREADS);   
     FILE *mnist = fopen("./data/train-images-idx3-ubyte", "rb");
     int header, rows, cols;
     fseek(mnist, sizeof(int)*2, SEEK_SET);
@@ -77,7 +83,16 @@ int main(void) {
     Tensor *conv = tcreate(((Tensor){1,3,3}));
     memcpy(conv->data, &((float []){-1,-2,-1,0,0,0,1,2,1}), sizeof(float)*9);
     Tensor *result = tcreate(((Tensor){1,rows,cols}));
-    forward_conv(im1, conv, result);
+
+    int n = 1000;
+    double res = 0;
+    for(int i = 0; i<n; i++)
+    {
+        clock_t t = omp_get_wtime();
+        forward_conv(im1, conv, result);
+        res += omp_get_wtime()-t;
+    }
+    printf("Conv execution time: %lf", res/n);
 
     write_image("data/res.jpg", 280, 280, im1);
     write_image("data/conv.jpg", 280, 280, result);

@@ -1,4 +1,4 @@
 all: build
 	./run
 build:
-	gcc -fopenmp -ggdb -o run conv.c
+	gcc -ggdb -o run main.c primitives/conv.c primitives/loss.c

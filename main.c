@@ -5,13 +5,8 @@
 #include <byteswap.h>
 #include <time.h>
 
-typedef struct {
-    size_t c,w,h;
-    float data[];
-} Tensor;
-#define tel(ten, c, x, y) ten->data[(c)*ten->w*ten->h + (y)*ten->w + (x)]
-#define tsize(ten) (ten)->w*(ten)->h*(ten)->c
-#define tcreate(blueprint) memcpy(calloc(sizeof(Tensor)+tsize(&blueprint)*sizeof(float), 1), &blueprint, sizeof(Tensor))
+#include "primitives/tensor.h"
+#include "primitives/primitives.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "external/stb_image_write.h"
@@ -33,60 +28,6 @@ static inline void write_image(const char* path, size_t width, size_t height, Te
     stbi_write_jpg(path, width, height, 1, buffer, 100);
     printf("Image %s min: %.3f max %.3f\n", path, minv, maxv);
     free(buffer);
-}
-
-#include <assert.h>
-#include <omp.h>
-void forward_conv(Tensor *input, Tensor *conv, Tensor *output)
-{
-    assert(conv->w == conv->h);
-    int offs = conv->w/2;
-    
-    for(int y=offs;y<input->h-offs;y++)
-        for(int x=offs;x<input->w-offs;x++)
-        {
-            for (int cx = 0; cx < conv->w; cx++) 
-                for (int cy = 0; cy < conv->h; cy++) 
-                    tel(output, 0, x, y)+= tel(input, 0, x-offs+cx, y-offs+cy)*tel(conv, 0, cx, cy);  
-        }
-}
-void backward_conv_filter(Tensor* conv_grad, Tensor *input, Tensor *output_grad)
-{
-    int offs = conv_grad->w/2;
-    for(int y=offs;y<input->h-offs;y++)
-        for(int x=offs;x<input->w-offs;x++)
-        {
-            for (int cx = 0; cx < conv_grad->w; cx++) 
-                for (int cy = 0; cy < conv_grad->h; cy++) 
-                    tel(conv_grad, 0, cx, cy)+=tel(input, 0, x-offs+cx, y-offs+cy)*tel(output_grad, 0, x, y);
-        }
-}
-
-void backward_conv_input(Tensor *input_grad, Tensor *conv, Tensor *output_grad)
-{
-    int offs = conv->w/2;
-    for(int y=offs;y<input_grad->h-offs;y++)
-        for(int x=offs;x<input_grad->w-offs;x++)
-        {
-            for (int cx = 0; cx < conv->w; cx++) 
-                for (int cy = 0; cy < conv->h; cy++) 
-                    tel(input_grad, 0, x-offs+cx, y-offs+cy)+=tel(conv, 0, cx, cy)*tel(output_grad, 0, x, y);
-        }
-}
-
-float mse_loss(Tensor *input, Tensor *target, Tensor *input_grad)
-{
-    float acc = 0;
-    int size = tsize(input);
-    for(int c=0;c<input->c;c++)
-        for(int y=0;y<input->h;y++)
-            for(int x=0;x<input->w;x++)
-            {
-                float error=tel(input,c,x,y)-tel(target,c,x,y);
-                tel(input_grad,c,x,y)=2*error/size;
-                acc+=error*error;
-            }
-    return acc/size;
 }
 
 void update(Tensor *ten, Tensor *grad)
@@ -144,7 +85,7 @@ int main(void) {
         if(i%10==9)
             printf("Step %d Loss %.3f\n", i, mse);
         memset(grad_conv->data, 0, sizeof(float)*tsize(grad_conv));
-        backward_conv_filter(grad_conv, im1, loss_grad);
+        backward_conv(grad_conv, im1, loss_grad);
         update(lrconv, grad_conv);
     }
     

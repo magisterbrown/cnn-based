@@ -92,7 +92,7 @@ float mse_loss(Tensor *input, Tensor *target, Tensor *input_grad)
 void update(Tensor *ten, Tensor *grad)
 {
     for(int i=0;i<tsize(ten);i++)
-        ten->data[i]+=grad->data[i]*0.0001;
+        ten->data[i]-=grad->data[i]*0.1;
 }
 
 int main(void) {
@@ -135,14 +135,17 @@ int main(void) {
     
     forward_conv(im1, conv, result);
     
-    for(int i=0;i<10;i++)
+    for(int i=0;i<100;i++)
     {
+        memset(lresult->data, 0, sizeof(float)*tsize(lresult));
         forward_conv(im1, lrconv, lresult);
+
         float mse = mse_loss(lresult, result, loss_grad);
-        printf("Loss %.3f\n", mse);
+        if(i%10==9)
+            printf("Step %d Loss %.3f\n", i, mse);
+        memset(grad_conv->data, 0, sizeof(float)*tsize(grad_conv));
         backward_conv_filter(grad_conv, im1, loss_grad);
         update(lrconv, grad_conv);
-        memset(lresult->data, 0, tsize(lresult));
     }
     
 

@@ -5,7 +5,6 @@
 #include <byteswap.h>
 #include <time.h>
 
-#include "primitives/tensor.h"
 #include "primitives/primitives.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -67,25 +66,27 @@ int main(void) {
     Tensor *lrconv = tcreate(((Tensor){1,3,3}));
     Tensor *grad_conv= tcreate(((Tensor){1,3,3}));
     memcpy(conv->data, &((float []){-1,-2,-1,0,0,0,1,2,1}), sizeof(float)*9);
+    //memcpy(conv->data, &((float []){0,0,0,0,1,0,0,0,0}), sizeof(float)*9);
     memcpy(lrconv->data, &((float []){-0.13,0.12,0.01,0.06,-0.01,0.02,-0.1,-0.11,-0.08}), sizeof(float)*9);
-
-    Tensor *result = tcreate(((Tensor){1,rows,cols}));
-    Tensor *lresult= tcreate(((Tensor){1,rows,cols}));
-    Tensor *loss_grad = tcreate(((Tensor){1,rows,cols}));
+    
+    int stride = 1;
+    Tensor *result = tcreate(((Tensor){1,rows/stride,cols/stride}));
+    Tensor *lresult= tcreate(((Tensor){1,rows/stride,cols/stride}));
+    Tensor *loss_grad = tcreate(((Tensor){1,rows/stride,cols/stride}));
 
     
-    forward_conv(im1, conv, result);
+    forward_conv(im1, conv, result, stride);
     
     for(int i=0;i<100;i++)
     {
         memset(lresult->data, 0, sizeof(float)*tsize(lresult));
-        forward_conv(im1, lrconv, lresult);
+        forward_conv(im1, lrconv, lresult, stride);
 
         float mse = mse_loss(lresult, result, loss_grad);
         if(i%10==9)
             printf("Step %d Loss %.3f\n", i, mse);
         memset(grad_conv->data, 0, sizeof(float)*tsize(grad_conv));
-        backward_conv(grad_conv, im1, loss_grad);
+        backward_conv(grad_conv, im1, loss_grad, stride);
         update(lrconv, grad_conv);
     }
     

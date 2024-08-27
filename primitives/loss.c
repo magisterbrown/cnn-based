@@ -1,4 +1,4 @@
-#include "tensor.h"
+#include "primitives.h"
 #include <assert.h>
 
 float mse_loss(Tensor *input, Tensor *target, Tensor *input_grad)

@@ -41,22 +41,55 @@ void forward_conv(Tensor *input, Tensor *conv, Tensor *output)
     assert(conv->w == conv->h);
     int offs = conv->w/2;
     
-    #pragma omp parallel for schedule(static)
-    for(int x=offs;x<input->w-offs;x++)
-        for(int y=offs;y<input->h-offs;y++)
+    for(int y=offs;y<input->h-offs;y++)
+        for(int x=offs;x<input->w-offs;x++)
         {
             for (int cx = 0; cx < conv->w; cx++) 
                 for (int cy = 0; cy < conv->h; cy++) 
-                {
-                    tel(output, 0, x, y) += tel(input, 0, x-offs+cx, y-offs+cy)*tel(conv, 0, cx, cy);  
-                }
+                    tel(output, 0, x, y)+= tel(input, 0, x-offs+cx, y-offs+cy)*tel(conv, 0, cx, cy);  
+        }
+}
+void backward_conv_filter(Tensor* conv_grad, Tensor *input, Tensor *output_grad)
+{
+    int offs = conv_grad->w/2;
+    for(int y=offs;y<input->h-offs;y++)
+        for(int x=offs;x<input->w-offs;x++)
+        {
+            for (int cx = 0; cx < conv_grad->w; cx++) 
+                for (int cy = 0; cy < conv_grad->h; cy++) 
+                    tel(conv_grad, 0, cx, cy)+=tel(input, 0, x-offs+cx, y-offs+cy)*tel(output_grad, 0, x, y);
         }
 }
 
-#define NUM_THREADS 12
+void backward_conv_input(Tensor *input_grad, Tensor *conv, Tensor *output_grad)
+{
+    int offs = conv->w/2;
+    for(int y=offs;y<input_grad->h-offs;y++)
+        for(int x=offs;x<input_grad->w-offs;x++)
+        {
+            for (int cx = 0; cx < conv->w; cx++) 
+                for (int cy = 0; cy < conv->h; cy++) 
+                    tel(input_grad, 0, x-offs+cx, y-offs+cy)+=tel(conv, 0, cx, cy)*tel(output_grad, 0, x, y);
+        }
+}
+
+float mse_loss(Tensor *input, Tensor *target, Tensor *input_grad)
+{
+    float acc = 0;
+    int size = tsize(input);
+    for(int c=0;c<input->c;c++)
+        for(int y=0;y<input->h;y++)
+            for(int x=0;x<input->w;x++)
+            {
+                float error=tel(input,c,x,y)-tel(target,c,x,y);
+                tel(input_grad,c,x,y)=2*error/size;
+                acc+=error*error;
+            }
+    return acc/size;
+}
+
 int main(void) {
 
-    omp_set_num_threads(NUM_THREADS);   
     FILE *mnist = fopen("./data/train-images-idx3-ubyte", "rb");
     int header, rows, cols;
     fseek(mnist, sizeof(int)*2, SEEK_SET);
@@ -72,6 +105,8 @@ int main(void) {
     Tensor *im1 = tcreate(((Tensor){1,rows,cols}));
     uint8_t *buff = malloc(rows*cols);
     fread(buff, rows*cols, 1, mnist);
+
+
     for(int i=0;i<tsize(im1);i++) 
         im1->data[i] = (float)buff[i]/255;
     fread(buff, rows*cols, 1, mnist);
@@ -81,18 +116,21 @@ int main(void) {
     printf("Coumns %d\n", cols);
 
     Tensor *conv = tcreate(((Tensor){1,3,3}));
+    Tensor *lrconv = tcreate(((Tensor){1,3,3}));
     memcpy(conv->data, &((float []){-1,-2,-1,0,0,0,1,2,1}), sizeof(float)*9);
+    memcpy(lrconv->data, &((float []){-0.13,0.12,0.01,0.06,-0.01,0.02,-0.1,-0.11,-0.08}), sizeof(float)*9);
     Tensor *result = tcreate(((Tensor){1,rows,cols}));
 
     int n = 1000;
     double res = 0;
+    
     for(int i = 0; i<n; i++)
     {
         clock_t t = omp_get_wtime();
         forward_conv(im1, conv, result);
         res += omp_get_wtime()-t;
     }
-    printf("Conv execution time: %lf", res/n);
+    
 
     write_image("data/res.jpg", 280, 280, im1);
     write_image("data/conv.jpg", 280, 280, result);

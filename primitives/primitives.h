@@ -7,6 +7,7 @@ typedef struct {
 #define tel(ten, c, x, y) ten->data[(c)*ten->w*ten->h + (y)*ten->w + (x)]
 #define tsize(ten) (ten)->w*(ten)->h*(ten)->c
 #define tcreate(blueprint) memcpy(calloc(sizeof(Tensor)+tsize(&blueprint)*sizeof(float), 1), &blueprint, sizeof(Tensor))
+#define tfill(ten, filler) for(int fillp=0;fillp<tsize(ten);fillp++) {ten->data[fillp]=(filler);}
 
 float mse_loss(Tensor *input, Tensor *target, Tensor *input_grad);
 void forward_conv(Tensor *input, Tensor *conv, Tensor *output, int stride);

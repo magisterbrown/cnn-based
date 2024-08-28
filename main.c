@@ -29,6 +29,12 @@ static inline void write_image(const char* path, size_t width, size_t height, Te
     free(buffer);
 }
 
+#include <math.h>
+float normal_dist()
+{
+    return sqrt(-2*log((float)rand()/RAND_MAX))*cos(2*M_PI*((float)rand()/RAND_MAX));
+}
+
 void update(Tensor *ten, Tensor *grad)
 {
     for(int i=0;i<tsize(ten);i++)
@@ -36,7 +42,6 @@ void update(Tensor *ten, Tensor *grad)
 }
 
 int main(void) {
-
     FILE *mnist = fopen("./data/train-images-idx3-ubyte", "rb");
     int header, rows, cols;
     fseek(mnist, sizeof(int)*2, SEEK_SET);
@@ -67,7 +72,8 @@ int main(void) {
     Tensor *grad_conv= tcreate(((Tensor){1,3,3}));
     memcpy(conv->data, &((float []){-1,-2,-1,0,0,0,1,2,1}), sizeof(float)*9);
     //memcpy(conv->data, &((float []){0,0,0,0,1,0,0,0,0}), sizeof(float)*9);
-    memcpy(lrconv->data, &((float []){-0.13,0.12,0.01,0.06,-0.01,0.02,-0.1,-0.11,-0.08}), sizeof(float)*9);
+    //memcpy(lrconv->data, &((float []){-0.13,0.12,0.01,0.06,-0.01,0.02,-0.1,-0.11,-0.08}), sizeof(float)*9);
+    tfill(lrconv, normal_dist()/9); 
     
     int stride = 1;
     Tensor *result = tcreate(((Tensor){1,rows/stride,cols/stride}));

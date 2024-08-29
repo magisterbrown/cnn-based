@@ -2,22 +2,22 @@
 #include <stdio.h>
 #include <assert.h>
 
-void forward_conv(Tensor *input, Tensor *conv, Tensor *output, int stride)
-{
-    assert(conv->w == conv->h);
-    assert(input->w==input->h);
-    assert(output->w==output->h);
-    int offs = conv->w/2;
-    assert((input->w-offs)/stride>=output->w-offs*2);
-    
-    for(int y=offs;y<output->h-offs;y++)
-        for(int x=offs;x<output->w-offs;x++)
-        {
-            for (int cx = 0; cx < conv->w; cx++) 
-                for (int cy = 0; cy < conv->h; cy++) 
-                    tel(output, 0, x, y)+= tel(input, 0, x*stride-offs+cx, y*stride-offs+cy)*tel(conv, 0, cx, cy);  
-        }
-}
+//void forward_conv(Tensor *input, Tensor **conv, int n_conv, Tensor *output, int stride)
+//{
+//    //assert(conv->w == conv->h);
+//    //assert(input->w==input->h);
+//    //assert(output->w==output->h);
+//    //int offs = conv->w/2;
+//    //assert((input->w-offs)/stride>=output->w-offs*2);
+//    //
+//    //for(int y=offs;y<output->h-offs;y++)
+//    //    for(int x=offs;x<output->w-offs;x++)
+//    //    {
+//    //        for (int cx = 0; cx < conv->w; cx++) 
+//    //            for (int cy = 0; cy < conv->h; cy++) 
+//    //                tel(output, 0, x, y)+= tel(input, 0, x*stride-offs+cx, y*stride-offs+cy)*tel(conv, 0, cx, cy);  
+//    //    }
+//}
 void backward_conv(Tensor* conv_grad, Tensor *input, Tensor *output_grad, int stride)
 {
     int offs = conv_grad->w/2;

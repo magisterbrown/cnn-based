@@ -29,6 +29,42 @@ static inline void write_image(const char* path, size_t width, size_t height, Te
     free(buffer);
 }
 
+typedef struct {
+    int stride;
+    int inpt;
+    int dim;
+    Tensor **convs1; 
+    Tensor *interm;
+    Tensor **convs2;
+    Tensor **downsample;
+    Tensor *output;
+} Resblock;
+
+#include <assert.h>
+void forward_conv(Tensor *input, Tensor **conv, int n_conv, Tensor *output, int stride)
+{
+    assert(n_conv == output->c);
+    for(int i=0;i<n_conv;i++)
+    {
+        assert(conv[i]->w == conv[i]->h);
+    }
+    assert(input->w==input->h);
+    assert(output->w==output->h);
+
+    int offs = conv[0]->w/2;
+    assert((input->w-offs)/stride>=output->w-offs*2);
+}
+void resblock(Tensor *input, Resblock *block)
+{
+    forward_conv(input, block->convs1, block->dim, block->interm, block->stride);    
+    for(int i=0;i<tsize(block->interm);i++)
+        block->interm->data[i] = block->interm->data[i] ? block->interm->data[i]>0 : 0;
+    //forward_conv(input, block->convs1, block->dim, output, 1);    
+    //for(int i=0;i<tsize(output);i++)
+    //    output->data[i] = (output->data[i] + input->data[i])/2;
+    
+}
+
 #include <math.h>
 float normal_dist()
 {
@@ -64,6 +100,28 @@ int main(void) {
     fread(buff, rows*cols, 1, mnist);
     fclose(mnist);
 
+    Resblock r1 = {
+        .stride = 1,
+        .inpt = 1,
+        .dim = 8,
+    };
+    Tensor *convs1[r1.dim];
+    Tensor *convs2[r1.dim];
+    Tensor *downsample[r1.dim];
+    for(int i=0;i<r1.dim;i++) 
+    {
+        convs1[i] = tcreate(((Tensor){r1.inpt,3,3}));
+        tfill(convs1[i], normal_dist()/9); 
+        convs2[i] = tcreate(((Tensor){r1.dim,3,3}));
+        tfill(convs2[i], normal_dist()/9); 
+        downsample[i] = tcreate(((Tensor){r1.inpt,1,1}));
+    }
+    r1.convs1 = convs1;
+    r1.interm = tcreate(((Tensor){r1.dim,rows,cols}));
+    r1.convs2 = convs2;
+    r1.downsample = downsample;
+    r1.output = tcreate(((Tensor){r1.dim,rows,cols}));
+    resblock(im1, &r1); 
     printf("Rows %d\n", rows);
     printf("Coumns %d\n", cols);
 
@@ -71,35 +129,13 @@ int main(void) {
     Tensor *lrconv = tcreate(((Tensor){1,3,3}));
     Tensor *grad_conv= tcreate(((Tensor){1,3,3}));
     memcpy(conv->data, &((float []){-1,-2,-1,0,0,0,1,2,1}), sizeof(float)*9);
-    //memcpy(conv->data, &((float []){0,0,0,0,1,0,0,0,0}), sizeof(float)*9);
-    //memcpy(lrconv->data, &((float []){-0.13,0.12,0.01,0.06,-0.01,0.02,-0.1,-0.11,-0.08}), sizeof(float)*9);
     tfill(lrconv, normal_dist()/9); 
     
     int stride = 1;
     Tensor *result = tcreate(((Tensor){1,rows/stride,cols/stride}));
-    Tensor *lresult= tcreate(((Tensor){1,rows/stride,cols/stride}));
-    Tensor *loss_grad = tcreate(((Tensor){1,rows/stride,cols/stride}));
-
+    //forward_conv(im1, conv, result, stride);
     
-    forward_conv(im1, conv, result, stride);
-    
-    for(int i=0;i<100;i++)
-    {
-        memset(lresult->data, 0, sizeof(float)*tsize(lresult));
-        forward_conv(im1, lrconv, lresult, stride);
-
-        float mse = mse_loss(lresult, result, loss_grad);
-        if(i%10==9)
-            printf("Step %d Loss %.3f\n", i, mse);
-        memset(grad_conv->data, 0, sizeof(float)*tsize(grad_conv));
-        backward_conv(grad_conv, im1, loss_grad, stride);
-        update(lrconv, grad_conv);
-    }
     
 
-    write_image("data/conv_grad.jpg", 280, 280, grad_conv);
-    write_image("data/grad.jpg", 280, 280, loss_grad);
-    write_image("data/conv.jpg", 280, 280, result);
-    write_image("data/lrconv.jpg", 280, 280, lresult);
     return 0;
 }

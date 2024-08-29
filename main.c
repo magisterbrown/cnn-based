@@ -82,7 +82,8 @@ void init_resblock(Resblock *block, int dim, int inpt, int stride)
         tfill(convs1[i], normal_dist()); 
         convs2[i] = tcreate(((Tensor){dim,3,3}));
         tfill(convs2[i], normal_dist()); 
-        downsample[i] = tcreate(((Tensor){inpt,1,1}));
+        downsample[i] = tcreate(((Tensor){inpt,3,3}));
+        tfill(downsample[i], normal_dist()); 
     }
     memcpy(block, &((Resblock){
         .stride = stride,
@@ -98,12 +99,17 @@ void init_resblock(Resblock *block, int dim, int inpt, int stride)
 }
 void resblock(Tensor *input, Resblock *block)
 {
+    // Conv1
     forward_conv(input, block->convs1, block->dim, block->interm, block->stride);    
+    forward_conv(input, block->downsample, block->dim, block->output, block->stride);    
+    // ReLu 
     for(int i=0;i<tsize(block->interm);i++)
         block->interm->data[i] = block->interm->data[i] ? block->interm->data[i]>0 : 0;
+    // Conv2
     forward_conv(block->interm, block->convs1, block->dim, block->output, 1);    
-    //for(int i=0;i<tsize(output);i++)
-    //    output->data[i] = (output->data[i] + input->data[i])/2;
+    //Acc
+    for(int i=0;i<tsize(block->output);i++)
+        block->output->data[i]/=2;
     
 }
 
@@ -139,7 +145,7 @@ int main(void) {
     Resblock block = {0};
     init_resblock(&block, 8, 1, 2);
     resblock(im1, &block); 
-    write_image("data/resblocked.jpg", 280, 280, block.output, 0);
+    write_image("data/resblocked.jpg", 280, 280, block.output, 5);
     printf("Rows %d\n", rows);
     printf("Coumns %d\n", cols);
 

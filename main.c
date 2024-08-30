@@ -98,16 +98,16 @@ void init_resblock(Resblock *block, int dim, int inpt, int stride, int side)
 void resblock(Tensor *input, Resblock *block)
 {
     // Conv1
-    //forward_conv(input, block->convs1, block->dim, block->interm, block->stride);    
+    forward_conv(input, block->convs1, block->dim, block->interm, block->stride);    
     forward_conv(input, block->downsample, block->dim, block->output, block->stride);    
     // ReLu 
-    //for(int i=0;i<tsize(block->interm);i++)
-    //    block->interm->data[i] = block->interm->data[i] ? block->interm->data[i]>0 : 0;
+    for(int i=0;i<tsize(block->interm);i++)
+        block->interm->data[i] = block->interm->data[i] ? block->interm->data[i]>0 : 0;
     //// Conv2
-    //forward_conv(block->interm, block->convs1, block->dim, block->output, 1);    
+    forward_conv(block->interm, block->convs1, block->dim, block->output, 1);    
     ////Acc
-    //for(int i=0;i<tsize(block->output);i++)
-    //    block->output->data[i]/=2;
+    for(int i=0;i<tsize(block->output);i++)
+        block->output->data[i]/=2;
     
 }
 

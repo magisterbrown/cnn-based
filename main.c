@@ -69,47 +69,45 @@ float normal_dist()
 {
     return sqrt(-2*log((float)rand()/RAND_MAX))*cos(2*M_PI*((float)rand()/RAND_MAX));
 }
-void init_resblock(Resblock *block, int dim, int inpt, int stride) 
+void init_resblock(Resblock *block, int dim, int inpt, int stride, int side) 
 {
-    int rows = 28;
-    int cols = 28;
-    Tensor *convs1[dim];
-    Tensor *convs2[dim];
-    Tensor *downsample[dim];
+    int rows = side;
+    int cols = side;
+    Tensor **convs1 = malloc(sizeof(Tensor *)*dim);
+    Tensor **convs2 = malloc(sizeof(Tensor *)*dim);
+    Tensor **downsample = malloc(sizeof(Tensor *)*dim);
     for(int i=0;i<dim;i++) 
     {
         convs1[i] = tcreate(((Tensor){inpt,3,3}));
-        tfill(convs1[i], normal_dist()); 
+        tfill(convs1[i], normal_dist()/9); 
         convs2[i] = tcreate(((Tensor){dim,3,3}));
-        tfill(convs2[i], normal_dist()); 
+        tfill(convs2[i], normal_dist()/9); 
         downsample[i] = tcreate(((Tensor){inpt,3,3}));
-        tfill(downsample[i], normal_dist()); 
+        tfill(downsample[i], normal_dist()/9); 
     }
-    memcpy(block, &((Resblock){
-        .stride = stride,
-        .inpt = inpt,
-        .dim = dim,
-        .convs1 = convs1,
-        .interm = tcreate(((Tensor){dim,rows/stride,cols/stride})),
-        .convs2 = convs2,
-        .downsample = downsample,
-        .output = tcreate(((Tensor){dim,rows/stride,cols/stride})),
-    }), sizeof(Resblock));
+    block->stride = stride;
+    block->inpt = inpt;
+    block->dim = dim;
+    block->convs1 = convs1;
+    block->interm = tcreate(((Tensor){dim,rows/stride,cols/stride}));
+    block->convs2 = convs2;
+    block->downsample = downsample;
+    block->output = tcreate(((Tensor){dim,rows/stride,cols/stride}));
 
 }
 void resblock(Tensor *input, Resblock *block)
 {
     // Conv1
-    forward_conv(input, block->convs1, block->dim, block->interm, block->stride);    
+    //forward_conv(input, block->convs1, block->dim, block->interm, block->stride);    
     forward_conv(input, block->downsample, block->dim, block->output, block->stride);    
     // ReLu 
-    for(int i=0;i<tsize(block->interm);i++)
-        block->interm->data[i] = block->interm->data[i] ? block->interm->data[i]>0 : 0;
-    // Conv2
-    forward_conv(block->interm, block->convs1, block->dim, block->output, 1);    
-    //Acc
-    for(int i=0;i<tsize(block->output);i++)
-        block->output->data[i]/=2;
+    //for(int i=0;i<tsize(block->interm);i++)
+    //    block->interm->data[i] = block->interm->data[i] ? block->interm->data[i]>0 : 0;
+    //// Conv2
+    //forward_conv(block->interm, block->convs1, block->dim, block->output, 1);    
+    ////Acc
+    //for(int i=0;i<tsize(block->output);i++)
+    //    block->output->data[i]/=2;
     
 }
 
@@ -120,6 +118,7 @@ void update(Tensor *ten, Tensor *grad)
         ten->data[i]-=grad->data[i]*0.1;
 }
 
+#define UPSAMPLE 64
 int main(void) {
     FILE *mnist = fopen("./data/train-images-idx3-ubyte", "rb");
     int header, rows, cols;
@@ -142,10 +141,35 @@ int main(void) {
         im1->data[i] = (float)buff[i]/255;
     fread(buff, rows*cols, 1, mnist);
     fclose(mnist);
-    Resblock block = {0};
-    init_resblock(&block, 8, 1, 2);
-    resblock(im1, &block); 
-    write_image("data/resblocked.jpg", 280, 280, block.output, 5);
+
+    Tensor *upsampled = tcreate(((Tensor){UPSAMPLE,rows,cols}));
+    Tensor *upconvs[UPSAMPLE];
+    for(int i=0;i<UPSAMPLE;i++)
+    {
+        upconvs[i] = tcreate(((Tensor){1, 3,3}));
+        tfill(upconvs[i], normal_dist()); 
+    }
+
+    Resblock blocks[5];
+    init_resblock(&blocks[0], 64, 64, 1, 28);
+    init_resblock(&blocks[1], 128, 64, 2, 28);
+    init_resblock(&blocks[2], 128, 128, 1, 14);
+    init_resblock(&blocks[3], 256, 128, 2, 14);
+    init_resblock(&blocks[4], 256, 256, 1, 7);
+
+    //Runnn
+    forward_conv(im1, upconvs, UPSAMPLE, upsampled, 1);    
+    resblock(upsampled, &blocks[0]); 
+    resblock(blocks[0].output, &blocks[1]); 
+    resblock(blocks[1].output, &blocks[2]); 
+    resblock(blocks[2].output, &blocks[3]); 
+    resblock(blocks[3].output, &blocks[4]); 
+    write_image("data/layers/ups.jpg", 280, 280, upsampled, 0);
+    write_image("data/layers/b0.jpg", 280, 280, blocks[0].output, 0);
+    write_image("data/layers/b1.jpg", 280, 280, blocks[1].output, 0);
+    write_image("data/layers/b2.jpg", 280, 280, blocks[2].output, 0);
+    write_image("data/layers/b3.jpg", 280, 280, blocks[3].output, 0);
+    write_image("data/layers/b4.jpg", 280, 280, blocks[4].output, 0);
     printf("Rows %d\n", rows);
     printf("Coumns %d\n", cols);
 

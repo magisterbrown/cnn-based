@@ -118,6 +118,24 @@ void update(Tensor *ten, Tensor *grad)
         ten->data[i]-=grad->data[i]*0.1;
 }
 
+void avg_pooler(Tensor *input, Tensor *pooled)
+{
+    assert(input->c == pooled->c);
+    int sz = input->w*input->h;
+    for(int c=0;c<input->c;c++)
+        for(int y=0;y<input->h;y++)
+            for(int x=0;x<input->w;x++)
+                tel(pooled, c, 0, 0) += tel(input, c, x, y)/sz;
+}
+
+void linearize(Tensor *pooled, float *matrix, float *result, int nres)
+{
+    for(int i=0;i<nres;i++)    
+        for(int j=0;j<pooled->c/nres;j++)    
+            result[i]+=matrix[i*j]*tel(pooled, i*j, 0, 0);
+
+}
+
 #define UPSAMPLE 64
 int main(void) {
     FILE *mnist = fopen("./data/train-images-idx3-ubyte", "rb");
@@ -143,6 +161,7 @@ int main(void) {
     fclose(mnist);
 
     Tensor *upsampled = tcreate(((Tensor){UPSAMPLE,rows,cols}));
+    Tensor *avgpool = tcreate(((Tensor){256,1,1}));
     Tensor *upconvs[UPSAMPLE];
     for(int i=0;i<UPSAMPLE;i++)
     {
@@ -157,6 +176,11 @@ int main(void) {
     init_resblock(&blocks[3], 256, 128, 2, 14);
     init_resblock(&blocks[4], 256, 256, 1, 7);
 
+    float linear[256*10];
+    for(int i=0;i<256*10;i++)
+        linear[i] = normal_dist();
+    float output[10];
+    memset(&output, 0, 10);
     //Runnn
     forward_conv(im1, upconvs, UPSAMPLE, upsampled, 1);    
     resblock(upsampled, &blocks[0]); 
@@ -164,6 +188,11 @@ int main(void) {
     resblock(blocks[1].output, &blocks[2]); 
     resblock(blocks[2].output, &blocks[3]); 
     resblock(blocks[3].output, &blocks[4]); 
+    avg_pooler(blocks[4].output, avgpool);
+    linearize(avgpool, linear, output, 10);
+    for(int i=0;i<10;i++)
+        printf("Digit: %d prob: %.3f; ", i, output[i]);
+    printf("\n");
     write_image("data/layers/ups.jpg", 280, 280, upsampled, 0);
     write_image("data/layers/b0.jpg", 280, 280, blocks[0].output, 0);
     write_image("data/layers/b1.jpg", 280, 280, blocks[1].output, 0);

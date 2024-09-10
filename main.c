@@ -16,16 +16,21 @@ static inline void write_image(const char* path, size_t width, size_t height, Te
     uint8_t *buffer = malloc(width*height*sizeof(int)); 
     float minv = 10000;
     float maxv = -10000;
+    float avg = 0;
+    float avgsq = 0;
     for(int i=0;i<tsize(img);i++)
     {
         minv = min(minv, img->data[i]); 
         maxv = max(maxv, img->data[i]); 
+        avg+=(img->data[i]-avg)/(i+1);
+        avgsq+=(img->data[i]*img->data[i]-avgsq)/(i+1);
     }
+    float std = avgsq - avg*avg;
     for(int y=0;y<height;y++)
         for(int x=0;x<width;x++)
             buffer[y*width+x] = 255*(tel(img, chanel, img->w*x/width, img->h*y/height)-minv)/maxv;
     stbi_write_jpg(path, width, height, 1, buffer, 100);
-    printf("Image %s min: %.3f max %.3f\n", path, minv, maxv);
+    printf("Image %s min: %.3f max: %.3f avg: %.3f std: %.3f\n", path, minv, maxv, avg, std);
     free(buffer);
 }
 
@@ -41,6 +46,7 @@ typedef struct {
 } Resblock;
 
 #include <assert.h>
+// TODO: optinal reset
 void forward_conv(Tensor *input, Tensor **conv, int n_conv, Tensor *output, int stride)
 {
     assert(n_conv == output->c);
@@ -50,6 +56,7 @@ void forward_conv(Tensor *input, Tensor **conv, int n_conv, Tensor *output, int 
     }
     assert(input->w==input->h);
     assert(output->w==output->h);
+    tfill(output, 0);
 
     int offs = conv[0]->w/2;
     //assert((input->w-offs)/stride>=output->w-offs*2);
@@ -157,8 +164,7 @@ int main(void) {
 
     for(int i=0;i<tsize(im1);i++) 
         im1->data[i] = (float)buff[i]/255;
-    fread(buff, rows*cols, 1, mnist);
-    fclose(mnist);
+    //fread(buff, rows*cols, 1, mnist);
 
     Tensor *upsampled = tcreate(((Tensor){UPSAMPLE,rows,cols}));
     Tensor *avgpool = tcreate(((Tensor){256,1,1}));
@@ -181,24 +187,54 @@ int main(void) {
         linear[i] = normal_dist();
     float output[10];
     memset(&output, 0, 10);
+
+    //Bootstrap
+    //Tensor *conv = upconvs[0]; 
     //Runnn
-    forward_conv(im1, upconvs, UPSAMPLE, upsampled, 1);    
+    for(int lp=0;lp<20;lp++)
+    {
+        fread(buff, rows*cols, 1, mnist);
+        for(int i=0;i<tsize(im1);i++) 
+            im1->data[i] = (float)buff[i]/255;
+
+        forward_conv(im1, upconvs, UPSAMPLE, upsampled, 1);    
+        for(int i=0;i<UPSAMPLE;i++)
+        {
+            float avg = 0;
+            float avgsq = 0;
+            int ct = 1;
+            for(int y=0;y<upsampled->h;y++)
+                for(int x=0;x<upsampled->w;x++)
+                {
+                    float el = tel(upsampled, i, x, y);
+                    avg += (el-avg)/ct;
+                    avgsq += (el*el-avgsq)/ct;
+                    ct++;
+                }
+            float std = avgsq-avg*avg;
+            printf("%d. Layer std: %f avg: %f \n", i, std, avg);
+            for(int j=0;j<tsize(upconvs[i]);j++)
+                upconvs[i]->data[j]/=sqrt(std); 
+        }
+    }
+    fclose(mnist);
+
     resblock(upsampled, &blocks[0]); 
-    resblock(blocks[0].output, &blocks[1]); 
-    resblock(blocks[1].output, &blocks[2]); 
-    resblock(blocks[2].output, &blocks[3]); 
-    resblock(blocks[3].output, &blocks[4]); 
-    avg_pooler(blocks[4].output, avgpool);
-    linearize(avgpool, linear, output, 10);
-    for(int i=0;i<10;i++)
-        printf("Digit: %d prob: %.3f; ", i, output[i]);
-    printf("\n");
+    //resblock(blocks[0].output, &blocks[1]); 
+    //resblock(blocks[1].output, &blocks[2]); 
+    //resblock(blocks[2].output, &blocks[3]); 
+    //resblock(blocks[3].output, &blocks[4]); 
+    //avg_pooler(blocks[4].output, avgpool);
+    //linearize(avgpool, linear, output, 10);
+    //for(int i=0;i<10;i++)
+    //    printf("Digit: %d prob: %.3f; ", i, output[i]);
+    //printf("\n");
     write_image("data/layers/ups.jpg", 280, 280, upsampled, 0);
-    write_image("data/layers/b0.jpg", 280, 280, blocks[0].output, 0);
-    write_image("data/layers/b1.jpg", 280, 280, blocks[1].output, 0);
-    write_image("data/layers/b2.jpg", 280, 280, blocks[2].output, 0);
-    write_image("data/layers/b3.jpg", 280, 280, blocks[3].output, 0);
-    write_image("data/layers/b4.jpg", 280, 280, blocks[4].output, 0);
+    //write_image("data/layers/b0.jpg", 280, 280, blocks[0].output, 0);
+    //write_image("data/layers/b1.jpg", 280, 280, blocks[1].output, 0);
+    //write_image("data/layers/b2.jpg", 280, 280, blocks[2].output, 0);
+    //write_image("data/layers/b3.jpg", 280, 280, blocks[3].output, 0);
+    //write_image("data/layers/b4.jpg", 280, 280, blocks[4].output, 0);
     printf("Rows %d\n", rows);
     printf("Coumns %d\n", cols);
 

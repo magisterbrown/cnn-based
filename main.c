@@ -25,7 +25,7 @@ static inline void write_image(const char* path, size_t width, size_t height, Te
         avg+=(img->data[i]-avg)/(i+1);
         avgsq+=(img->data[i]*img->data[i]-avgsq)/(i+1);
     }
-    float std = avgsq - avg*avg;
+    float std = sqrt(avgsq - avg*avg);
     for(int y=0;y<height;y++)
         for(int x=0;x<width;x++)
             buffer[y*width+x] = 255*(tel(img, chanel, img->w*x/width, img->h*y/height)-minv)/maxv;
@@ -33,6 +33,12 @@ static inline void write_image(const char* path, size_t width, size_t height, Te
     printf("Image %s min: %.3f max: %.3f avg: %.3f std: %.3f\n", path, minv, maxv, avg, std);
     free(buffer);
 }
+
+typedef struct {
+    float bias;
+    Tensor *weights;
+} Conv;
+
 
 typedef struct {
     int stride;
@@ -47,31 +53,30 @@ typedef struct {
 
 #include <assert.h>
 // TODO: optinal reset
-void forward_conv(Tensor *input, Tensor **conv, int n_conv, Tensor *output, int stride)
+void forward_conv(Tensor *input, size_t n_conv, Conv conv[n_conv], Tensor *output, int stride)
 {
     assert(n_conv == output->c);
     for(int i=0;i<n_conv;i++)
     {
-        assert(conv[i]->w == conv[i]->h);
+        assert(conv[i].weights->w == conv[i].weights->h);
     }
     assert(input->w==input->h);
     assert(output->w==output->h);
     tfill(output, 0);
 
-    int offs = conv[0]->w/2;
-    //assert((input->w-offs)/stride>=output->w-offs*2);
+    int offs = conv[0].weights->w/2;
     assert(input->w/stride==output->w);
     for(int cho = 0; cho < output->c; cho++)
         for(int y=offs;y<output->h-offs;y++)
             for(int x=offs;x<output->w-offs;x++)
             {
-                for(int chi = 0; chi < conv[cho]->c; chi++)
-                    for (int cx = 0; cx < conv[cho]->w; cx++)
-                        for (int cy = 0; cy < conv[cho]->h; cy++)
-                            tel(output, cho, x, y) += tel(input, chi, x*stride-offs+cx, y*stride-offs+cy)*tel(conv[cho], chi, cx, cy);
+                for(int chi = 0; chi < conv[cho].weights->c; chi++)
+                    for (int cx = 0; cx < conv[cho].weights->w; cx++)
+                        for (int cy = 0; cy < conv[cho].weights->h; cy++)
+                            tel(output, cho, x, y) += tel(input, chi, x*stride-offs+cx, y*stride-offs+cy)*tel(conv[cho].weights, chi, cx, cy);
+                tel(output, cho, x, y) += conv[cho].bias;
             }
 }
-#include <math.h>
 float normal_dist()
 {
     return sqrt(-2*log((float)rand()/RAND_MAX))*cos(2*M_PI*((float)rand()/RAND_MAX));
@@ -105,16 +110,16 @@ void init_resblock(Resblock *block, int dim, int inpt, int stride, int side)
 void resblock(Tensor *input, Resblock *block)
 {
     // Conv1
-    forward_conv(input, block->convs1, block->dim, block->interm, block->stride);    
-    forward_conv(input, block->downsample, block->dim, block->output, block->stride);    
-    // ReLu 
-    for(int i=0;i<tsize(block->interm);i++)
-        block->interm->data[i] = block->interm->data[i] ? block->interm->data[i]>0 : 0;
-    //// Conv2
-    forward_conv(block->interm, block->convs1, block->dim, block->output, 1);    
-    ////Acc
-    for(int i=0;i<tsize(block->output);i++)
-        block->output->data[i]/=2;
+    //forward_conv(input, block->convs1, block->dim, block->interm, block->stride);    
+    //forward_conv(input, block->downsample, block->dim, block->output, block->stride);    
+    //// ReLu 
+    //for(int i=0;i<tsize(block->interm);i++)
+    //    block->interm->data[i] = block->interm->data[i] ? block->interm->data[i]>0 : 0;
+    ////// Conv2
+    //forward_conv(block->interm, block->convs1, block->dim, block->output, 1);    
+    //////Acc
+    //for(int i=0;i<tsize(block->output);i++)
+    //    block->output->data[i]/=2;
     
 }
 
@@ -169,35 +174,40 @@ int main(void) {
     Tensor *upsampled = tcreate(((Tensor){UPSAMPLE,rows,cols}));
     Tensor *avgpool = tcreate(((Tensor){256,1,1}));
     Tensor *upconvs[UPSAMPLE];
+    Conv cupconvs[UPSAMPLE];
     for(int i=0;i<UPSAMPLE;i++)
     {
+        cupconvs[i] = (Conv) {.bias = normal_dist(), .weights=tcreate(((Tensor){1,3,3}))};
+        tfill(cupconvs[i].weights, normal_dist());
+
         upconvs[i] = tcreate(((Tensor){1, 3,3}));
         tfill(upconvs[i], normal_dist()); 
     }
 
     Resblock blocks[5];
-    init_resblock(&blocks[0], 64, 64, 1, 28);
-    init_resblock(&blocks[1], 128, 64, 2, 28);
-    init_resblock(&blocks[2], 128, 128, 1, 14);
-    init_resblock(&blocks[3], 256, 128, 2, 14);
-    init_resblock(&blocks[4], 256, 256, 1, 7);
+    //init_resblock(&blocks[0], 64, 64, 1, 28);
+    //init_resblock(&blocks[1], 128, 64, 2, 28);
+    //init_resblock(&blocks[2], 128, 128, 1, 14);
+    //init_resblock(&blocks[3], 256, 128, 2, 14);
+    //init_resblock(&blocks[4], 256, 256, 1, 7);
 
     float linear[256*10];
     for(int i=0;i<256*10;i++)
         linear[i] = normal_dist();
     float output[10];
     memset(&output, 0, 10);
-
+    
+    forward_conv(im1, UPSAMPLE, cupconvs, upsampled, 1);
     //Bootstrap
     //Tensor *conv = upconvs[0]; 
     //Runnn
-    for(int lp=0;lp<20;lp++)
+    for(int lp=0;lp<10;lp++)
     {
         fread(buff, rows*cols, 1, mnist);
         for(int i=0;i<tsize(im1);i++) 
             im1->data[i] = (float)buff[i]/255;
 
-        forward_conv(im1, upconvs, UPSAMPLE, upsampled, 1);    
+        forward_conv(im1, UPSAMPLE, cupconvs, upsampled, 1);
         for(int i=0;i<UPSAMPLE;i++)
         {
             float avg = 0;
@@ -211,13 +221,16 @@ int main(void) {
                     avgsq += (el*el-avgsq)/ct;
                     ct++;
                 }
-            float std = avgsq-avg*avg;
+            float std = sqrt(avgsq-avg*avg);
             printf("%d. Layer std: %f avg: %f \n", i, std, avg);
-            for(int j=0;j<tsize(upconvs[i]);j++)
-                upconvs[i]->data[j]/=sqrt(std); 
+            for(int j=0;j<tsize(cupconvs[i].weights);j++)
+                cupconvs[i].weights->data[j]/=std; 
+            cupconvs[i].bias-=avg;
         }
     }
     fclose(mnist);
+    write_image("data/layers/ups.jpg", 280, 280, upsampled, 0);
+    return 0;
 
     resblock(upsampled, &blocks[0]); 
     //resblock(blocks[0].output, &blocks[1]); 
@@ -229,7 +242,6 @@ int main(void) {
     //for(int i=0;i<10;i++)
     //    printf("Digit: %d prob: %.3f; ", i, output[i]);
     //printf("\n");
-    write_image("data/layers/ups.jpg", 280, 280, upsampled, 0);
     //write_image("data/layers/b0.jpg", 280, 280, blocks[0].output, 0);
     //write_image("data/layers/b1.jpg", 280, 280, blocks[1].output, 0);
     //write_image("data/layers/b2.jpg", 280, 280, blocks[2].output, 0);

@@ -203,35 +203,7 @@ int main(void) {
     //Bootstrap
     //Tensor *conv = upconvs[0]; 
     //Runnn
-    for(int lp=0;lp<0;lp++)
-    {
-        fread(buff, rows*cols, 1, mnist);
-        for(int i=0;i<tsize(im1);i++) 
-            im1->data[i] = (float)buff[i]/255;
-
-        forward_conv(im1, UPSAMPLE, cupconvs, upsampled, 1);
-        for(int i=0;i<UPSAMPLE;i++)
-        {
-            float avg = 0;
-            float avgsq = 0;
-            int ct = 1;
-            for(int y=0;y<upsampled->h;y++)
-                for(int x=0;x<upsampled->w;x++)
-                {
-                    float el = tel(upsampled, i, x, y);
-                    avg += (el-avg)/ct;
-                    avgsq += (el*el-avgsq)/ct;
-                    ct++;
-                }
-            float std = sqrt(avgsq-avg*avg);
-            printf("%d. Layer std: %f avg: %f bias: %f\n", i, std, avg, cupconvs[i].bias);
-            for(int j=0;j<tsize(cupconvs[i].weights);j++)
-                cupconvs[i].weights->data[j]/=std; 
-            cupconvs[i].bias-=avg*0.1;
-        }
-    }
     fclose(mnist);
-    write_image("data/layers/ups.jpg", 280, 280, upsampled, 0);
 
     resblock(upsampled, &blocks[0]); 
     resblock(blocks[0].output, &blocks[1]); 
@@ -243,6 +215,7 @@ int main(void) {
     for(int i=0;i<10;i++)
         printf("Digit: %d prob: %.3f; ", i, output[i]);
     printf("\n");
+    write_image("data/layers/ups.jpg", 280, 280, upsampled, 0);
     write_image("data/layers/b0.jpg", 280, 280, blocks[0].output, 0);
     write_image("data/layers/b1.jpg", 280, 280, blocks[1].output, 0);
     write_image("data/layers/b2.jpg", 280, 280, blocks[2].output, 0);

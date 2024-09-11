@@ -44,10 +44,10 @@ typedef struct {
     int stride;
     int inpt;
     int dim;
-    Tensor **convs1; 
+    Conv *convs1; 
     Tensor *interm;
-    Tensor **convs2;
-    Tensor **downsample;
+    Conv *convs2;
+    Conv *downsample;
     Tensor *output;
 } Resblock;
 
@@ -85,17 +85,19 @@ void init_resblock(Resblock *block, int dim, int inpt, int stride, int side)
 {
     int rows = side;
     int cols = side;
-    Tensor **convs1 = malloc(sizeof(Tensor *)*dim);
-    Tensor **convs2 = malloc(sizeof(Tensor *)*dim);
-    Tensor **downsample = malloc(sizeof(Tensor *)*dim);
+    Conv *convs1 = malloc(sizeof(Conv)*dim);
+    Conv *convs2 = malloc(sizeof(Conv)*dim);
+    Conv *downsample = malloc(sizeof(Conv)*dim);
     for(int i=0;i<dim;i++) 
     {
-        convs1[i] = tcreate(((Tensor){inpt,3,3}));
-        tfill(convs1[i], normal_dist()/9); 
-        convs2[i] = tcreate(((Tensor){dim,3,3}));
-        tfill(convs2[i], normal_dist()/9); 
-        downsample[i] = tcreate(((Tensor){inpt,3,3}));
-        tfill(downsample[i], normal_dist()/9); 
+        convs1[i] = (Conv) {.bias=0, .weights=tcreate(((Tensor){inpt,3,3}))};
+        tfill(convs1[i].weights, normal_dist()/9); 
+
+        convs2[i] = (Conv) {.bias=0, .weights=tcreate(((Tensor){dim,3,3}))};
+        tfill(convs2[i].weights, normal_dist()/9); 
+
+        downsample[i] = (Conv) {.bias=0, .weights=tcreate(((Tensor){inpt,3,3}))};
+        tfill(downsample[i].weights, normal_dist()/9);
     }
     block->stride = stride;
     block->inpt = inpt;
@@ -110,16 +112,16 @@ void init_resblock(Resblock *block, int dim, int inpt, int stride, int side)
 void resblock(Tensor *input, Resblock *block)
 {
     // Conv1
-    //forward_conv(input, block->convs1, block->dim, block->interm, block->stride);    
-    //forward_conv(input, block->downsample, block->dim, block->output, block->stride);    
+    forward_conv(input, block->dim, block->convs1, block->interm, block->stride);
+    forward_conv(input, block->dim, block->downsample, block->output, block->stride);    
     //// ReLu 
-    //for(int i=0;i<tsize(block->interm);i++)
-    //    block->interm->data[i] = block->interm->data[i] ? block->interm->data[i]>0 : 0;
+    for(int i=0;i<tsize(block->interm);i++)
+        block->interm->data[i] = block->interm->data[i] ? block->interm->data[i]>0 : 0;
     ////// Conv2
-    //forward_conv(block->interm, block->convs1, block->dim, block->output, 1);    
+    forward_conv(block->interm, block->dim, block->convs1, block->output, 1);    
     //////Acc
-    //for(int i=0;i<tsize(block->output);i++)
-    //    block->output->data[i]/=2;
+    for(int i=0;i<tsize(block->output);i++)
+        block->output->data[i]/=2;
     
 }
 
@@ -177,7 +179,7 @@ int main(void) {
     Conv cupconvs[UPSAMPLE];
     for(int i=0;i<UPSAMPLE;i++)
     {
-        cupconvs[i] = (Conv) {.bias = normal_dist(), .weights=tcreate(((Tensor){1,3,3}))};
+        cupconvs[i] = (Conv) {.bias = 0, .weights=tcreate(((Tensor){1,3,3}))};
         tfill(cupconvs[i].weights, normal_dist());
 
         upconvs[i] = tcreate(((Tensor){1, 3,3}));
@@ -185,11 +187,11 @@ int main(void) {
     }
 
     Resblock blocks[5];
-    //init_resblock(&blocks[0], 64, 64, 1, 28);
-    //init_resblock(&blocks[1], 128, 64, 2, 28);
-    //init_resblock(&blocks[2], 128, 128, 1, 14);
-    //init_resblock(&blocks[3], 256, 128, 2, 14);
-    //init_resblock(&blocks[4], 256, 256, 1, 7);
+    init_resblock(&blocks[0], 64, 64, 1, 28);
+    init_resblock(&blocks[1], 128, 64, 2, 28);
+    init_resblock(&blocks[2], 128, 128, 1, 14);
+    init_resblock(&blocks[3], 256, 128, 2, 14);
+    init_resblock(&blocks[4], 256, 256, 1, 7);
 
     float linear[256*10];
     for(int i=0;i<256*10;i++)
@@ -201,7 +203,7 @@ int main(void) {
     //Bootstrap
     //Tensor *conv = upconvs[0]; 
     //Runnn
-    for(int lp=0;lp<10;lp++)
+    for(int lp=0;lp<0;lp++)
     {
         fread(buff, rows*cols, 1, mnist);
         for(int i=0;i<tsize(im1);i++) 
@@ -222,37 +224,32 @@ int main(void) {
                     ct++;
                 }
             float std = sqrt(avgsq-avg*avg);
-            printf("%d. Layer std: %f avg: %f \n", i, std, avg);
+            printf("%d. Layer std: %f avg: %f bias: %f\n", i, std, avg, cupconvs[i].bias);
             for(int j=0;j<tsize(cupconvs[i].weights);j++)
                 cupconvs[i].weights->data[j]/=std; 
-            cupconvs[i].bias-=avg;
+            cupconvs[i].bias-=avg*0.1;
         }
     }
     fclose(mnist);
     write_image("data/layers/ups.jpg", 280, 280, upsampled, 0);
-    return 0;
 
     resblock(upsampled, &blocks[0]); 
-    //resblock(blocks[0].output, &blocks[1]); 
-    //resblock(blocks[1].output, &blocks[2]); 
-    //resblock(blocks[2].output, &blocks[3]); 
-    //resblock(blocks[3].output, &blocks[4]); 
-    //avg_pooler(blocks[4].output, avgpool);
-    //linearize(avgpool, linear, output, 10);
-    //for(int i=0;i<10;i++)
-    //    printf("Digit: %d prob: %.3f; ", i, output[i]);
-    //printf("\n");
-    //write_image("data/layers/b0.jpg", 280, 280, blocks[0].output, 0);
-    //write_image("data/layers/b1.jpg", 280, 280, blocks[1].output, 0);
-    //write_image("data/layers/b2.jpg", 280, 280, blocks[2].output, 0);
-    //write_image("data/layers/b3.jpg", 280, 280, blocks[3].output, 0);
-    //write_image("data/layers/b4.jpg", 280, 280, blocks[4].output, 0);
+    resblock(blocks[0].output, &blocks[1]); 
+    resblock(blocks[1].output, &blocks[2]); 
+    resblock(blocks[2].output, &blocks[3]); 
+    resblock(blocks[3].output, &blocks[4]); 
+    avg_pooler(blocks[4].output, avgpool);
+    linearize(avgpool, linear, output, 10);
+    for(int i=0;i<10;i++)
+        printf("Digit: %d prob: %.3f; ", i, output[i]);
+    printf("\n");
+    write_image("data/layers/b0.jpg", 280, 280, blocks[0].output, 0);
+    write_image("data/layers/b1.jpg", 280, 280, blocks[1].output, 0);
+    write_image("data/layers/b2.jpg", 280, 280, blocks[2].output, 0);
+    write_image("data/layers/b3.jpg", 280, 280, blocks[3].output, 0);
+    write_image("data/layers/b4.jpg", 280, 280, blocks[4].output, 0);
     printf("Rows %d\n", rows);
     printf("Coumns %d\n", cols);
-
-    //forward_conv(im1, conv, result, stride);
-    
-    
 
     return 0;
 }

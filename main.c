@@ -205,40 +205,46 @@ int main(void) {
     //Runnn
     fclose(mnist);
 
-    resblock(upsampled, &blocks[0]); 
-    resblock(blocks[0].output, &blocks[1]); 
-    resblock(blocks[1].output, &blocks[2]); 
-    resblock(blocks[2].output, &blocks[3]); 
-    resblock(blocks[3].output, &blocks[4]); 
-    avg_pooler(blocks[4].output, avgpool);
-    linearize(avgpool, linear, output, 10);
-    float sbase = 0;
+    //resblock(upsampled, &blocks[0]); 
+    //resblock(blocks[0].output, &blocks[1]); 
+    //resblock(blocks[1].output, &blocks[2]); 
+    //resblock(blocks[2].output, &blocks[3]); 
+    //resblock(blocks[3].output, &blocks[4]); 
+    //avg_pooler(blocks[4].output, avgpool);
+    //linearize(avgpool, linear, output, 10);
     for(int i=0;i<10;i++)
-        sbase+=exp(output[i]);
-    for(int i=0;i<10;i++)
-        printf("Digit: %d prob: %.3f; ", i, exp(output[i])/sbase);
-    printf("\n");
-    int label = 0;
-    float softm = exp(output[label])/sbase;
-    float loss = -log(softm);
-    printf("Finall loss: %.3f\n",loss); 
-    float softm_grad = -1/softm;
-    float lab_grad[10];
-    for(int i=0;i<10;i++)
+        output[i]=normal_dist();
+    for(int j=0;j<20;j++)
     {
-        if(i==label)
-            lab_grad[i] = 1/(sbase)-exp(output[i])/(sbase*sbase);
-        else
-            lab_grad[i] = -1/(sbase*sbase);
-        lab_grad[i]*=softm_grad*exp(output[i]);
-        printf("lab grad: %f\n", lab_grad[i]);
+        float sbase = 0;
+        for(int i=0;i<10;i++)
+            sbase+=exp(output[i]);
+        for(int i=0;i<10;i++)
+            printf("Digit: %d prob: %.3f; ", i, exp(output[i])/sbase);
+        printf("\n");
+        int label = 5;
+        float softm = exp(output[label])/sbase;
+        float loss = -log(softm);
+        printf("Finall loss: %.3f\n",loss); 
+        float softm_grad = -1/softm;
+        float lab_grad[10];
+        for(int i=0;i<10;i++)
+        {
+            if(i==label)
+                lab_grad[i] = 1/(sbase)-exp(output[i])/(sbase*sbase);
+            else
+                lab_grad[i] = -1/(sbase*sbase);
+            lab_grad[i]*=softm_grad*exp(output[i]);
+            output[i]-=lab_grad[i];
+            //printf("lab grad: %f\n", lab_grad[i]);
+        }
     }
-    write_image("data/layers/ups.jpg", 280, 280, upsampled, 0);
-    write_image("data/layers/b0.jpg", 280, 280, blocks[0].output, 0);
-    write_image("data/layers/b1.jpg", 280, 280, blocks[1].output, 0);
-    write_image("data/layers/b2.jpg", 280, 280, blocks[2].output, 0);
-    write_image("data/layers/b3.jpg", 280, 280, blocks[3].output, 0);
-    write_image("data/layers/b4.jpg", 280, 280, blocks[4].output, 0);
+    //write_image("data/layers/ups.jpg", 280, 280, upsampled, 0);
+    //write_image("data/layers/b0.jpg", 280, 280, blocks[0].output, 0);
+    //write_image("data/layers/b1.jpg", 280, 280, blocks[1].output, 0);
+    //write_image("data/layers/b2.jpg", 280, 280, blocks[2].output, 0);
+    //write_image("data/layers/b3.jpg", 280, 280, blocks[3].output, 0);
+    //write_image("data/layers/b4.jpg", 280, 280, blocks[4].output, 0);
     printf("Rows %d\n", rows);
     printf("Coumns %d\n", cols);
 

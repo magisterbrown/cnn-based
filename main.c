@@ -197,6 +197,7 @@ int main(void) {
     for(int i=0;i<256*10;i++)
         linear[i] = normal_dist();
     float output[10];
+    float softmaxed[10];
     memset(&output, 0, 10);
     
     forward_conv(im1, UPSAMPLE, cupconvs, upsampled, 1);
@@ -212,9 +213,13 @@ int main(void) {
     resblock(blocks[3].output, &blocks[4]); 
     avg_pooler(blocks[4].output, avgpool);
     linearize(avgpool, linear, output, 10);
+    float sbase = 0;
     for(int i=0;i<10;i++)
-        printf("Digit: %d prob: %.3f; ", i, output[i]);
+        sbase+=exp(output[i]);
+    for(int i=0;i<10;i++)
+        printf("Digit: %d prob: %.3f; ", i, exp(output[i])/sbase);
     printf("\n");
+    printf("Finall loss: %.3f\n", -log(exp(output[0])/sbase));
     write_image("data/layers/ups.jpg", 280, 280, upsampled, 0);
     write_image("data/layers/b0.jpg", 280, 280, blocks[0].output, 0);
     write_image("data/layers/b1.jpg", 280, 280, blocks[1].output, 0);

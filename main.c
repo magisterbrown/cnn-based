@@ -197,7 +197,6 @@ int main(void) {
     for(int i=0;i<256*10;i++)
         linear[i] = normal_dist();
     float output[10];
-    float softmaxed[10];
     memset(&output, 0, 10);
     
     forward_conv(im1, UPSAMPLE, cupconvs, upsampled, 1);
@@ -219,7 +218,21 @@ int main(void) {
     for(int i=0;i<10;i++)
         printf("Digit: %d prob: %.3f; ", i, exp(output[i])/sbase);
     printf("\n");
-    printf("Finall loss: %.3f\n", -log(exp(output[0])/sbase));
+    int label = 0;
+    float softm = exp(output[label])/sbase;
+    float loss = -log(softm);
+    printf("Finall loss: %.3f\n",loss); 
+    float softm_grad = -1/softm;
+    float lab_grad[10];
+    for(int i=0;i<10;i++)
+    {
+        if(i==label)
+            lab_grad[i] = 1/(sbase)-exp(output[i])/(sbase*sbase);
+        else
+            lab_grad[i] = -1/(sbase*sbase);
+        lab_grad[i]*=softm_grad*exp(output[i]);
+        printf("lab grad: %f\n", lab_grad[i]);
+    }
     write_image("data/layers/ups.jpg", 280, 280, upsampled, 0);
     write_image("data/layers/b0.jpg", 280, 280, blocks[0].output, 0);
     write_image("data/layers/b1.jpg", 280, 280, blocks[1].output, 0);

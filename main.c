@@ -36,7 +36,9 @@ static inline void write_image(const char* path, size_t width, size_t height, Te
 
 typedef struct {
     float bias;
+    float bias_grad;
     Tensor *weights;
+    Tensor *weights_gard;
 } Conv;
 
 
@@ -90,13 +92,13 @@ void init_resblock(Resblock *block, int dim, int inpt, int stride, int side)
     Conv *downsample = malloc(sizeof(Conv)*dim);
     for(int i=0;i<dim;i++) 
     {
-        convs1[i] = (Conv) {.bias=0, .weights=tcreate(((Tensor){inpt,3,3}))};
+        convs1[i] = (Conv) {.bias=0, .weights=tcreate(((Tensor){inpt,3,3})), .weights_gard=tcreate(((Tensor){inpt,3,3}))};
         tfill(convs1[i].weights, normal_dist()/9); 
 
-        convs2[i] = (Conv) {.bias=0, .weights=tcreate(((Tensor){dim,3,3}))};
+        convs2[i] = (Conv) {.bias=0, .weights=tcreate(((Tensor){dim,3,3})), .weights_gard=tcreate(((Tensor){inpt,3,3}))};
         tfill(convs2[i].weights, normal_dist()/9); 
 
-        downsample[i] = (Conv) {.bias=0, .weights=tcreate(((Tensor){inpt,3,3}))};
+        downsample[i] = (Conv) {.bias=0, .weights=tcreate(((Tensor){inpt,3,3})), .weights_gard=tcreate(((Tensor){inpt,3,3}))};
         tfill(downsample[i].weights, normal_dist()/9);
     }
     block->stride = stride;
@@ -134,23 +136,11 @@ void update(Tensor *ten, Tensor *grad)
 
 void avg_pooler(Tensor *input, Tensor *pooled)
 {
-    assert(input->c == pooled->c);
-    int sz = input->w*input->h;
-    for(int c=0;c<input->c;c++)
-        for(int y=0;y<input->h;y++)
-            for(int x=0;x<input->w;x++)
-                tel(pooled, c, 0, 0) += tel(input, c, x, y)/sz;
-}
-
-void linearize(Tensor *pooled, float *matrix, float *result, int nres)
-{
-    for(int i=0;i<nres;i++)    
-        for(int j=0;j<pooled->c/nres;j++)    
-            result[i]+=matrix[i*j]*tel(pooled, i*j, 0, 0);
-
 }
 
 #define UPSAMPLE 64
+#define LINEAR 256
+#define NRES 10
 int main(void) {
     FILE *mnist = fopen("./data/train-images-idx3-ubyte", "rb");
     int header, rows, cols;
@@ -174,7 +164,7 @@ int main(void) {
     //fread(buff, rows*cols, 1, mnist);
 
     Tensor *upsampled = tcreate(((Tensor){UPSAMPLE,rows,cols}));
-    Tensor *avgpool = tcreate(((Tensor){256,1,1}));
+    //Tensor *avgpool = tcreate(((Tensor){256,1,1}));
     Tensor *upconvs[UPSAMPLE];
     Conv cupconvs[UPSAMPLE];
     for(int i=0;i<UPSAMPLE;i++)
@@ -193,8 +183,9 @@ int main(void) {
     init_resblock(&blocks[3], 256, 128, 2, 14);
     init_resblock(&blocks[4], 256, 256, 1, 7);
 
-    float linear[256*10];
-    for(int i=0;i<256*10;i++)
+    float avgpool[LINEAR];
+    float linear[LINEAR*NRES];
+    for(int i=0;i<LINEAR*NRES;i++)
         linear[i] = normal_dist();
     float output[10];
     memset(&output, 0, 10);
@@ -211,34 +202,49 @@ int main(void) {
     //resblock(blocks[2].output, &blocks[3]); 
     //resblock(blocks[3].output, &blocks[4]); 
     //avg_pooler(blocks[4].output, avgpool);
-    //linearize(avgpool, linear, output, 10);
+
+    //Avg pool
+    Tensor *conv_out = blocks[4].output;
+    int sz = conv_out->w*conv_out->h;
+    for(int c=0;c<conv_out->c;c++)
+        for(int y=0;y<conv_out->h;y++)
+            for(int x=0;x<conv_out->w;x++)
+                avgpool[c] += tel(conv_out, c, x, y)/sz;
+    
+    //Linear
+    for(int i=0;i<LINEAR*NRES;i++)    
+        output[i/LINEAR]+=linear[i]*avgpool[i/NRES];
+
+    float sbase = 0;
     for(int i=0;i<10;i++)
-        output[i]=normal_dist();
-    for(int j=0;j<20;j++)
+        sbase+=exp(output[i]);
+    for(int i=0;i<10;i++)
+        printf("Digit: %d prob: %.3f; ", i, exp(output[i])/sbase);
+    printf("\n");
+    int label = 5;
+    float softm = exp(output[label])/sbase;
+    float loss = -log(softm);
+    printf("Finall loss: %.3f\n",loss); 
+
+    // Gradient of a lable
+    float softm_grad = -1/softm;
+    float lab_grad[10];
+    for(int i=0;i<10;i++)
     {
-        float sbase = 0;
-        for(int i=0;i<10;i++)
-            sbase+=exp(output[i]);
-        for(int i=0;i<10;i++)
-            printf("Digit: %d prob: %.3f; ", i, exp(output[i])/sbase);
-        printf("\n");
-        int label = 5;
-        float softm = exp(output[label])/sbase;
-        float loss = -log(softm);
-        printf("Finall loss: %.3f\n",loss); 
-        float softm_grad = -1/softm;
-        float lab_grad[10];
-        for(int i=0;i<10;i++)
-        {
-            if(i==label)
-                lab_grad[i] = 1/(sbase)-exp(output[i])/(sbase*sbase);
-            else
-                lab_grad[i] = -1/(sbase*sbase);
-            lab_grad[i]*=softm_grad*exp(output[i]);
-            output[i]-=lab_grad[i];
-            //printf("lab grad: %f\n", lab_grad[i]);
-        }
+        if(i==label)
+            lab_grad[i] = 1/(sbase)-exp(output[i])/(sbase*sbase);
+        else
+            lab_grad[i] = -1/(sbase*sbase);
+        lab_grad[i]*=softm_grad*exp(output[i]);
     }
+
+    //Linear gradient
+    float linear_grad[LINEAR*NRES];
+    for(int i=0;i<LINEAR*NRES;i++)    
+        linear_grad[i]=avgpool[i/NRES]*lab_grad[i/LINEAR];
+
+    //Avg pool gradient
+
     //write_image("data/layers/ups.jpg", 280, 280, upsampled, 0);
     //write_image("data/layers/b0.jpg", 280, 280, blocks[0].output, 0);
     //write_image("data/layers/b1.jpg", 280, 280, blocks[1].output, 0);
